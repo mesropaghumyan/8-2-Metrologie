@@ -1,0 +1,13 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: tp-monitoring
+nodes:
+- role: control-plane
+  # Ouverture des ports optionnels 30000 et 30001 pour faciliter l'accès à l'application ou à Grafana via NodePort si besoin.
+  extraPortMappings:
+  - containerPort: 30000
+    hostPort: 30000
+    protocol: TCP
+  - containerPort: 30001
+    hostPort: 30001
+    protocol: TCP

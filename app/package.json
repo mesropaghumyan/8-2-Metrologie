@@ -1,0 +1,16 @@
+{
+  "name": "tp-instrumented-app",
+  "version": "1.0.0",
+  "description": "TP Prometheus Grafana",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Mesrop Aghumyan",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.19.2",
+    "prom-client": "^15.1.2"
+  }
+}

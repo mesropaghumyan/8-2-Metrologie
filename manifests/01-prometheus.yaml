@@ -1,0 +1,181 @@
+---
+# RBAC (Droits pour le Service Discovery)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "nodes/proxy", "services", "endpoints", "pods"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "watch"]
+- nonResourceURLs: ["/metrics"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+- kind: ServiceAccount
+  name: prometheus
+  namespace: monitoring
+
+---
+# Configuration de Prometheus (ConfigMap)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    # Déclaration d'Alertmanager
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets:
+              - 'alertmanager.monitoring.svc.cluster.local:9093'
+
+    # Chargement du fichier de règles d'alertes
+    rule_files:
+      - '/etc/prometheus/alert.rules'
+
+    # Configuration de l'auto-découverte (Scrape)
+    scrape_configs:
+      - job_name: 'kubernetes-service-endpoints'
+        kubernetes_sd_configs:
+          - role: endpoints
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
+            action: replace
+            target_label: __scheme__
+            regex: (https?)
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+            action: replace
+            target_label: __address__
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+          - action: labelmap
+            regex: __meta_kubernetes_service_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: kubernetes_name
+
+  alert.rules: |
+    groups:
+      - name: tp-alertes
+        rules:
+          - alert: ComposantIndisponible
+            expr: up == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Le composant {{ $labels.kubernetes_name }} est DOWN"
+              description: "Prometheus n'arrive plus à collecter les métriques de {{ $labels.kubernetes_name }}."
+          - alert: TropErreurs5xx
+            expr: sum by (kubernetes_name) (increase(http_requests_total{status_code=~"5.."}[5m])) > 10
+            for: 1m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Pic d'erreurs 5xx sur {{ $labels.kubernetes_name }}"
+              description: "Plus de 10 erreurs 5xx dans les 5 dernières minutes."
+          - alert: AlertmanagerK8sIndisponible
+            expr: kube_deployment_status_replicas_available{deployment="alertmanager"} == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Alertmanager est indisponible dans le cluster"
+              description: "kube-state-metrics signale que le déploiement Alertmanager n'a plus de replica disponible."
+          - alert: PlusDeCommandesDeCafe
+            expr: sum(increase(app_coffee_served_total[5m])) == 0
+            for: 5m
+            labels:
+              severity: info
+            annotations:
+              summary: "Alerte Métier : Aucune commande reçue"
+              description: "Aucun café n'a été servi dans les 5 dernières minutes."
+
+---
+# Déploiement
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      serviceAccountName: prometheus
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v3.5.3
+        args:
+          - "--config.file=/etc/prometheus/prometheus.yml"
+          - "--storage.tsdb.path=/prometheus"
+        ports:
+        - containerPort: 9090
+        volumeMounts:
+        - name: prometheus-config-volume
+          mountPath: /etc/prometheus/
+        - name: prometheus-storage-volume
+          mountPath: /prometheus/
+      volumes:
+      - name: prometheus-config-volume
+        configMap:
+          name: prometheus-config
+      - name: prometheus-storage-volume
+        emptyDir: {}
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: monitoring
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+spec:
+  selector:
+    app: prometheus
+  ports:
+    - port: 9090
+      targetPort: 9090
+  type: ClusterIP
