@@ -1,0 +1,28 @@
+---
+# Job Kubernetes : importe Air_Quality.log dans l'index air-quality-*
+# Le job se termine quand Logstash reçoit EOF sur stdin (fin du pipe cat).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: air-quality-importer
+  namespace: elk
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: air-quality-importer
+        image: air-quality-importer:v1.0.0
+        imagePullPolicy: Never
+        env:
+        - name: LS_JAVA_OPTS
+          value: "-Xmx256m -Xms256m"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "768Mi"
+            cpu: "500m"

@@ -1,0 +1,15 @@
+{
+  "name": "coffee-app",
+  "version": "1.0.0",
+  "description": "Application TP ELK avec logs JSON structurés (pino)",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "author": "Mesrop Aghumyan",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.19.2",
+    "pino": "^9.2.0"
+  }
+}
